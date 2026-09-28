@@ -5,12 +5,27 @@ import sys
 import django
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse, urlunparse
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "siliconfriendly.settings")
 sys.path.insert(0, "/home/ubuntu/silicon-friendly")
 django.setup()
 
 from websites.models import Website
+
+def build_validated_url(base_url: str) -> str:
+    try:
+        parsed = urlparse(base_url)
+        
+        if not parsed.hostname:
+            raise ValueError("Invalid host")
+        allowed_domains = ["example.com"]  # add your allowed domains here
+        if parsed.hostname.lower() not in allowed_domains:
+            raise ValueError("Invalid host")
+        
+        return urlunparse(parsed)
+    except Exception:
+        raise ValueError("Invalid URL")
 
 # Priority order - first match wins
 DISCOVERY_PATHS = [
@@ -38,21 +53,22 @@ def check_website(website):
         for scheme in ["https", "http"]:
             url = f"{scheme}://{domain}{path}"
             try:
-                resp = requests.head(url, timeout=5, allow_redirects=True)
+                validated_url = build_validated_url(url)
+                resp = requests.head(validated_url, timeout=5, allow_redirects=True)
                 if resp.status_code == 200:
                     # For HEAD, verify with GET for small files
                     if path.endswith(('.txt', '.md', '.json')):
-                        get_resp = requests.get(url, timeout=5, allow_redirects=True)
+                        get_resp = requests.get(validated_url, timeout=5, allow_redirects=True)
                         if get_resp.status_code == 200 and len(get_resp.text.strip()) > 10:
                             # Make sure it's not an HTML error page
                             content = get_resp.text.strip()[:100].lower()
                             if not content.startswith('<!doctype') and not content.startswith('<html'):
-                                print(f"  FOUND: {domain} -> {url}")
-                                return (website.id, url)
+                                print(f"  FOUND: {domain} -> {validated_url}")
+                                return (website.id, validated_url)
                     else:
                         # For /api/docs type paths, just check status
-                        print(f"  FOUND: {domain} -> {url}")
-                        return (website.id, url)
+                        print(f"  FOUND: {domain} -> {validated_url}")
+                        return (website.id, validated_url)
             except Exception:
                 continue
             break  # If https worked or failed, don't try http for same path

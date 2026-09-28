@@ -13,6 +13,8 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "siliconfriendly.settings")
 django.setup()
 
+import re
+from urllib.parse import urlparse, urlunparse
 import requests
 from websites.models import Website
 from websites.tasks import generate_website_embedding
@@ -26,10 +28,26 @@ BATCH_SIZE = 10
 SLEEP_BETWEEN = 1  # seconds between API calls to avoid rate limits
 
 
+def build_validated_url(base_url: str, hostname: str) -> str:
+    try:
+        parsed = urlparse(base_url)
+        
+        if not parsed.hostname:
+            raise ValueError("Invalid host")
+        allowed_domains = ["example.com"]  # add your allowed domains here
+        if parsed.hostname.lower() not in allowed_domains:
+            raise ValueError("Invalid host")
+        
+        return urlunparse(parsed)
+    except Exception:
+        raise ValueError("Invalid URL")
+
+
 def fetch_homepage(url, timeout=10):
     """Fetch homepage content, return truncated text."""
     try:
-        resp = requests.get(f"https://{url}", timeout=timeout, headers={
+        validated_url = build_validated_url(f"https://{url}", url)
+        resp = requests.get(validated_url, timeout=timeout, headers={
             "User-Agent": "Mozilla/5.0 (compatible; SiliconFriendly/1.0)"
         })
         text = resp.text[:8000]  # truncate to avoid huge payloads

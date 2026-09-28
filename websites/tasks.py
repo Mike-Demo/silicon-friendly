@@ -10,6 +10,7 @@ from django.core.cache import cache
 from django.db.models import Count
 from google import genai
 from google.genai import types as genai_types
+from urllib.parse import urlparse, urlunparse
 import env
 
 logger = logging.getLogger(__name__)
@@ -207,15 +208,38 @@ def daily_verification_crunch():
 # Claude CLI website check
 # ---------------------------------------------------------------------------
 
+def _validate_url(url: str) -> str:
+    """Validate URL to prevent SSRF attacks. Returns validated URL or raises ValueError."""
+    try:
+        # Minimal path validation
+        if "/../" in url or re.search(r"/%2e%2e/", url, re.IGNORECASE):
+            raise ValueError("Invalid path")
+        
+        parsed = urlparse(url)
+        
+        # Protocol check
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("Invalid protocol")
+        
+        # Host check
+        if not parsed.hostname:
+            raise ValueError("Invalid host")
+        
+        return urlunparse(parsed)
+    except Exception:
+        raise ValueError("Invalid URL")
+
 def _fetch_url(url, timeout=FETCH_TIMEOUT):
     """Fetch a URL. Returns (status, headers_dict, body) or None on error."""
     try:
-        resp = http_requests.get(url, headers={"User-Agent": FETCH_UA}, timeout=timeout, allow_redirects=True)
+        validated_url = _validate_url(url)
+        resp = http_requests.get(validated_url, headers={"User-Agent": FETCH_UA}, timeout=timeout, allow_redirects=True)
         return {"status": resp.status_code, "headers": dict(resp.headers), "body": resp.text}
     except http_requests.exceptions.SSLError:
         try:
             fallback = url.replace("https://", "http://", 1)
-            resp = http_requests.get(fallback, headers={"User-Agent": FETCH_UA}, timeout=timeout, allow_redirects=True)
+            validated_fallback = _validate_url(fallback)
+            resp = http_requests.get(validated_fallback, headers={"User-Agent": FETCH_UA}, timeout=timeout, allow_redirects=True)
             return {"status": resp.status_code, "headers": dict(resp.headers), "body": resp.text}
         except Exception:
             return None

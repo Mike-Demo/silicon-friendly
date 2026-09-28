@@ -24,6 +24,7 @@ import sys
 import os
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 
 FETCH_UA = "SiliconFriendly/1.0 (+https://siliconfriendly.com)"
 FETCH_TIMEOUT = 10
@@ -74,6 +75,18 @@ LEVEL_RANGES = {lvl: [k for k in CRITERIA_DOCS if k.startswith(f"l{lvl}_")] for 
 
 def _fetch_url(url, timeout=FETCH_TIMEOUT):
     """Fetch a URL. Returns dict(status, headers, body) or None on error."""
+    try:
+        # Validate URL to prevent SSRF
+        if "/../" in url or re.search(r"/%2e%2e/", url, re.IGNORECASE):
+            return None
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return None
+        if not parsed.hostname:
+            return None
+    except Exception:
+        return None
+    
     req = urllib.request.Request(url, headers={"User-Agent": FETCH_UA})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
