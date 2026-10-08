@@ -1,5 +1,21 @@
 // Checker.js — Polling-based checker with suspenseful reveal
 
+// Security helpers (Aikido SAST remediation)
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+        return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+}
+// Only allow http(s) destinations — blocks javascript: and other dangerous schemes.
+function safeRedirect(url) {
+    try {
+        var parsed = new URL(url, window.location.origin);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            window.location.href = parsed.href;
+        }
+    } catch (e) { /* ignore malformed URLs */ }
+}
+
 const LEVEL_NAMES = {
     1: 'Basic Accessibility',
     2: 'Discoverability',
@@ -79,7 +95,7 @@ function startCheck() {
     .then(function(res) { return res.json(); })
     .then(function(data) {
         if (data.exists) {
-            window.location.href = data.url;
+            safeRedirect(data.url);
             return;
         }
         if (data.error) {
@@ -149,7 +165,7 @@ function pollStatus() {
                 if (!animatingLevel && pendingLevels.length === 0) {
                     clearInterval(checkRedirect);
                     if (data.website_url) {
-                        setTimeout(function() { window.location.href = data.website_url; }, 1500);
+                        setTimeout(function() { safeRedirect(data.website_url); }, 1500);
                     }
                 }
             }, 500);
@@ -209,7 +225,7 @@ function animateLevel(level, levelData) {
         var row = document.createElement('div');
         row.className = 'criteria-row';
         row.innerHTML =
-            '<span class="criteria-row-label">' + (CRITERIA_LABELS[key] || key) + '</span>' +
+            '<span class="criteria-row-label">' + escapeHtml(CRITERIA_LABELS[key] || key) + '</span>' +
             '<span class="criteria-row-status"><span class="criterion-spinner"></span></span>';
         grid.appendChild(row);
         rows.push({ el: row, key: key, pass: levelData.results[key] });
@@ -242,7 +258,7 @@ function animateLevel(level, levelData) {
                 // Show level result terminal block
                 var resultBlock = document.createElement('div');
                 resultBlock.className = 'checker-level-result ' + (passed >= 4 ? 'level-passed' : 'level-failed');
-                resultBlock.innerHTML = '<div class="terminal-result-block"><span>> LEVEL ' + level + (passed >= 4 ? ' PASSED' : ' FAILED') + ' — ' + passed + '/' + rows.length + ' criteria met</span></div>';
+                resultBlock.innerHTML = '<div class="terminal-result-block"><span>> LEVEL ' + escapeHtml(level) + (passed >= 4 ? ' PASSED' : ' FAILED') + ' — ' + escapeHtml(passed) + '/' + escapeHtml(rows.length) + ' criteria met</span></div>';
                 section.appendChild(resultBlock);
 
                 animatingLevel = false;
