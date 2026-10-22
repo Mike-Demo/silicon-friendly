@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models.functions import Lower
 from accounts.models import Carbon, Silicon
 from websites.models import Website
 
@@ -36,6 +37,13 @@ class PaymentRequest(models.Model):
 
     class Meta:
         db_table = "payment_requests"
+        constraints = [
+            models.UniqueConstraint(
+                Lower("tx_hash"),
+                condition=models.Q(tx_hash__isnull=False) & ~models.Q(tx_hash=""),
+                name="unique_payment_tx_hash",
+            ),
+        ]
 
     def __str__(self):
         return f"Payment {self.id} for {self.website.url} ({self.status})"

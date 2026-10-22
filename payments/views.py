@@ -1,4 +1,5 @@
 from rest_framework.views import APIView
+from django.db import IntegrityError, transaction
 from common.ratelimit import check_rate_limit, rate_limit_response, get_client_ip
 from rest_framework import permissions
 from dodopayments import DodoPayments
@@ -190,7 +191,7 @@ class CryptoSubmitView(APIView):
             return rate_limit_response(retry_after)
 
         chain = request.data.get("chain", "").lower()
-        tx_hash = request.data.get("tx_hash", "").strip()
+        tx_hash = request.data.get("tx_hash", "").strip().lower()
         website_url = request.data.get("website_url", "").strip()
 
         if chain not in ("base", "polygon", "arbitrum", "ethereum", "bsc", "avalanche"):
@@ -200,6 +201,9 @@ class CryptoSubmitView(APIView):
         if not website_url:
             return error_response("website_url is required.")
 
+        if PaymentRequest.objects.filter(tx_hash__iexact=tx_hash).exists():
+            return error_response("This transaction hash has already been submitted.", status=409)
+
         try:
             website = Website.objects.get(url=website_url)
         except Website.DoesNotExist:
@@ -207,15 +211,21 @@ class CryptoSubmitView(APIView):
 
         wallet = env.USDC_EVM_ADDRESS
 
-        payment = PaymentRequest.objects.create(
-            website=website,
-            requested_by_carbon=carbon,
-            requested_by_silicon=silicon,
-            amount_usd=10.00,
-            payment_method="crypto",
-            chain=chain,
-            tx_hash=tx_hash,
-        )
+        try:
+            with transaction.atomic():
+                payment = PaymentRequest.objects.create(
+                    website=website,
+                    requested_by_carbon=carbon,
+                    requested_by_silicon=silicon,
+                    amount_usd=10.00,
+                    payment_method="crypto",
+                    chain=chain,
+                    tx_hash=tx_hash,
+                )
+        except IntegrityError:
+            if PaymentRequest.objects.filter(tx_hash__iexact=tx_hash).exists():
+                return error_response("This transaction hash has already been submitted.", status=409)
+            raise
 
         return api_response(
             {

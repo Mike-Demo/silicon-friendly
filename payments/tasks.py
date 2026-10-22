@@ -90,22 +90,27 @@ def _check_dodo_status(dodo_session_id):
 
 def _mark_completed(payment):
     """Mark payment as completed, send success emails, create first VerificationRequest."""
-    from payments.models import VerificationRequest
+    from django.db import transaction
+    from payments.models import PaymentRequest, VerificationRequest
     from common.mail import send_email
 
-    payment.status = "completed"
-    if payment.requested_by_carbon and payment.requested_by_carbon.email:
-        payment.email = payment.requested_by_carbon.email
-    payment.save(update_fields=["status", "email"])
+    email = payment.requested_by_carbon.email if payment.requested_by_carbon else ""
+    with transaction.atomic():
+        if not PaymentRequest.objects.filter(pk=payment.pk, status="pending").update(
+            status="completed",
+            email=email or payment.email,
+        ):
+            return False
+        payment.refresh_from_db(fields=["status", "email"])
 
-    # Auto-create first verification request
-    VerificationRequest.objects.create(
-        payment=payment,
-        website=payment.website,
-        requested_by_carbon=payment.requested_by_carbon,
-        requested_by_silicon=payment.requested_by_silicon,
-        status="pending",
-    )
+        # Auto-create first verification request
+        VerificationRequest.objects.create(
+            payment=payment,
+            website=payment.website,
+            requested_by_carbon=payment.requested_by_carbon,
+            requested_by_silicon=payment.requested_by_silicon,
+            status="pending",
+        )
 
     website_name = payment.website.url
     customer_email = payment.email
@@ -153,6 +158,7 @@ def _mark_completed(payment):
                 '</pre>'
             ),
         )
+    return True
 
 
 def _send_abandoned_payment_email(payment):
