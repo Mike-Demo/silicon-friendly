@@ -18,6 +18,7 @@ FRONTEND_BASE_URL = os.environ.get('FRONTEND_BASE_URL', 'https://siliconfriendly
 
 # Dodo Payments
 DODOPAYMENTS_API_KEY = os.environ.get('DODOPAYMENTS_API_KEY', '')
+DODOPAYMENTS_WEBHOOK_KEY = os.environ.get('DODOPAYMENTS_WEBHOOK_KEY', '')
 
 # Database
 DB_NAME = os.environ.get('DB_NAME', 'siliconfriendly')
