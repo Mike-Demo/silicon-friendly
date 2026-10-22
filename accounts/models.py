@@ -1,11 +1,18 @@
 import uuid
 from django.db import models
 from django.contrib.auth.hashers import make_password, check_password
+from django.core.validators import RegexValidator
+
+
+validate_username = RegexValidator(
+    regex=r"\A[a-z0-9_]+\Z",
+    message="Usernames may contain only lowercase letters, numbers, and underscores.",
+)
 
 
 class Carbon(models.Model):
     email = models.EmailField(unique=True)
-    username = models.CharField(max_length=64, unique=True)
+    username = models.CharField(max_length=64, unique=True, validators=[validate_username])
     password = models.CharField(max_length=128, blank=True, default="")
     name = models.CharField(max_length=128, blank=True, default="")
     auth_provider = models.CharField(max_length=32, default="google")
@@ -27,7 +34,7 @@ class Carbon(models.Model):
 
 class Silicon(models.Model):
     email = models.EmailField(unique=True)
-    username = models.CharField(max_length=64, unique=True)
+    username = models.CharField(max_length=64, unique=True, validators=[validate_username])
     password = models.CharField(max_length=128)
     auth_token = models.UUIDField(default=uuid.uuid4, unique=True)
     token_last_used = models.DateTimeField(auto_now_add=True)

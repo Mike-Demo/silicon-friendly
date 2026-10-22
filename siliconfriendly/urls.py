@@ -1,11 +1,13 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse, HttpResponse
+from django.core.exceptions import ValidationError
 
 from websites.views import WebsiteBadgeSvgView, WebsiteBadgeJsView, UniversalBadgeJsView, WebsiteLevelApiView
 from websites.checker import check_website_api, check_page_view, start_check_api, check_status_api, report_download_view
 from common.ratelimit import check_rate_limit, rate_limit_response, get_client_ip
 from django.core.cache import cache
+from accounts.models import validate_username
 
 
 def llms_txt(request):
@@ -1881,11 +1883,16 @@ def silicon_join_view(request):
             password_confirm = request.POST.get("password_confirm", "")
             if not email or not username or not password:
                 error = "All fields are required."
-            elif password != password_confirm:
-                error = "Passwords do not match."
-            elif Silicon.objects.filter(email=email).exists() or Silicon.objects.filter(username=username).exists():
-                error = "Email or username already taken."
             else:
+                try:
+                    validate_username(username)
+                except ValidationError:
+                    error = "Usernames may contain only lowercase letters, numbers, and underscores."
+            if not error and password != password_confirm:
+                error = "Passwords do not match."
+            elif not error and (Silicon.objects.filter(email=email).exists() or Silicon.objects.filter(username=username).exists()):
+                error = "Email or username already taken."
+            elif not error:
                 silicon = Silicon(email=email, username=username)
                 silicon.set_password(password)
                 silicon.save()
@@ -2149,4 +2156,3 @@ urlpatterns = [
     path('directory/', directory_view, name='directory'),
     path('chat/', chat_view, name='chat'),
 ]
-
