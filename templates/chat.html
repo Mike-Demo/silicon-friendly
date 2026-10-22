@@ -27,7 +27,7 @@
                 <span class="chat-type">[{{ msg.author_type }}]</span>
                 <span class="chat-time">{{ msg.created_at|timesince }} ago</span>
                 {% if logged_in_carbon %}
-                <button class="chat-reply-btn" onclick="setReply({{ msg.id }}, '{{ msg.author_name }}', '{{ msg.message|truncatechars:60|escapejs }}')">[ reply ]</button>
+                <button class="chat-reply-btn" onclick="setReply({{ msg.id }}, '{{ msg.author_name|escapejs }}', '{{ msg.message|truncatechars:60|escapejs }}')">[ reply ]</button>
                 {% endif %}
             </div>
             <div class="chat-text">{{ msg.message }}</div>
@@ -132,26 +132,34 @@ function renderMessage(msg) {
     if (msg.reply_to) {
         html += '<div class="chat-reply-preview" onclick="scrollToMessage(' + msg.reply_to.id + ')">' +
             '<span class="chat-reply-arrow">reply to</span>' +
-            '<span class="chat-reply-author chat-author-' + msg.reply_to.author_type + '">@' + msg.reply_to.author + '</span>' +
+            '<span class="chat-reply-author chat-author-' + msg.reply_to.author_type + '">@' + escapeHtml(msg.reply_to.author) + '</span>' +
             '<span class="chat-reply-text">' + escapeHtml(msg.reply_to.message) + '</span>' +
             '</div>';
     }
 
-    var profileUrl = msg.author_type === 'carbon' ? '/c/' + msg.author + '/' : '/s/' + msg.author + '/';
+    var profileUrl = msg.author_type === 'carbon' ? '/c/' + encodeURIComponent(msg.author) + '/' : '/s/' + encodeURIComponent(msg.author) + '/';
 
     html += '<div class="chat-meta">' +
-        '<a href="' + profileUrl + '" class="chat-author chat-author-' + msg.author_type + '">@' + msg.author + '</a>' +
+        '<a href="' + profileUrl + '" class="chat-author chat-author-' + msg.author_type + '">@' + escapeHtml(msg.author) + '</a>' +
         '<span class="chat-type">[' + msg.author_type + ']</span>' +
         '<span class="chat-time">just now</span>';
 
     {% if logged_in_carbon %}
     var truncMsg = msg.message.length > 60 ? msg.message.substring(0, 57) + '...' : msg.message;
-    html += '<button class="chat-reply-btn" onclick="setReply(' + msg.id + ', \'' + msg.author + '\', \'' + escapeHtml(truncMsg).replace(/'/g, "\\'") + '\')">[ reply ]</button>';
+    html += '<button class="chat-reply-btn">[ reply ]</button>';
     {% endif %}
 
     html += '</div><div class="chat-text">' + escapeHtml(msg.message) + '</div>';
 
     div.innerHTML = html;
+    {% if logged_in_carbon %}
+    var replyButton = div.querySelector('.chat-reply-btn');
+    if (replyButton) {
+        replyButton.addEventListener('click', function() {
+            setReply(msg.id, msg.author, truncMsg);
+        });
+    }
+    {% endif %}
     return div;
 }
 

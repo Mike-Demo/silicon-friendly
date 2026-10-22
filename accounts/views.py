@@ -3,7 +3,8 @@ from common.ratelimit import check_rate_limit, rate_limit_response, get_client_i
 from rest_framework.views import APIView
 from rest_framework import permissions
 from core.utils import api_response, error_response
-from accounts.models import Carbon, Silicon
+from accounts.models import Carbon, Silicon, validate_username
+from django.core.exceptions import ValidationError
 
 
 class CarbonSignupView(APIView):
@@ -23,6 +24,10 @@ class CarbonSignupView(APIView):
 
         if not email or not username or not password:
             return error_response("email, username, password, and password_confirm are required.")
+        try:
+            validate_username(username)
+        except ValidationError:
+            return error_response("Usernames may contain only lowercase letters, numbers, and underscores.")
         if not password_confirm:
             return error_response("password_confirm is required.")
         if password != password_confirm:
@@ -107,6 +112,10 @@ class SiliconSignupView(APIView):
 
         if not email or not username or not password:
             return error_response("email, username, password, and password_confirm are required.")
+        try:
+            validate_username(username)
+        except ValidationError:
+            return error_response("Usernames may contain only lowercase letters, numbers, and underscores.")
         if not password_confirm:
             return error_response("password_confirm is required.")
         if password != password_confirm:
