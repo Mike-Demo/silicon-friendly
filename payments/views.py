@@ -1,3 +1,5 @@
+import json
+from django.db import transaction
 from rest_framework.views import APIView
 from common.ratelimit import check_rate_limit, rate_limit_response, get_client_ip
 from rest_framework import permissions
@@ -82,7 +84,24 @@ class DodoWebhookView(APIView):
     OUR_PRODUCT_ID = "pdt_0NYiXePm40uSt6H6x3aGn"
 
     def post(self, request):
-        payload = request.data
+        webhook_key = getattr(env, "DODOPAYMENTS_WEBHOOK_KEY", "")
+        if not webhook_key:
+            return error_response("Webhook signature verification is not configured.", status=503)
+
+        raw_body = request.body
+        client = DodoPayments(
+            bearer_token=env.DODOPAYMENTS_API_KEY,
+            webhook_key=webhook_key,
+        )
+        try:
+            client.webhooks.unwrap(
+                raw_body.decode("utf-8"),
+                headers={key.lower(): value for key, value in request.headers.items()},
+            )
+            payload = json.loads(raw_body)
+        except Exception:
+            return error_response("Invalid webhook signature or payload.", status=400)
+
         event_type = payload.get("event_type", "")
         data = payload.get("data", {})
         metadata = data.get("metadata", {})
@@ -101,23 +120,39 @@ class DodoWebhookView(APIView):
             return api_response({"status": "no_payment_id"}, meta={"status": "Webhook processing status"})
 
         try:
-            payment = PaymentRequest.objects.get(id=payment_id)
-        except PaymentRequest.DoesNotExist:
+            payment = PaymentRequest.objects.get(
+                id=payment_id,
+                payment_method=PaymentRequest.PaymentMethod.DODO,
+            )
+        except (PaymentRequest.DoesNotExist, ValueError):
             return error_response("Payment not found.", status=404)
 
-        payment.status = "completed"
-        if payment.requested_by_carbon and payment.requested_by_carbon.email:
-            payment.email = payment.requested_by_carbon.email
-        payment.save(update_fields=["status", "email"])
-
-        # Auto-create first verification request
-        VerificationRequest.objects.create(
-            payment=payment,
-            website=payment.website,
-            requested_by_carbon=payment.requested_by_carbon,
-            requested_by_silicon=payment.requested_by_silicon,
-            status="pending",
+        email = (
+            payment.requested_by_carbon.email
+            if payment.requested_by_carbon and payment.requested_by_carbon.email
+            else payment.email
         )
+        with transaction.atomic():
+            updated = PaymentRequest.objects.filter(
+                id=payment.id,
+                payment_method=PaymentRequest.PaymentMethod.DODO,
+                status=PaymentRequest.Status.PENDING,
+            ).update(status=PaymentRequest.Status.COMPLETED, email=email)
+            if not updated:
+                return api_response(
+                    {"status": "ignored", "reason": "payment is not pending"},
+                    meta={"status": "Webhook processing status"},
+                )
+
+            payment.status = PaymentRequest.Status.COMPLETED
+            payment.email = email
+            VerificationRequest.objects.create(
+                payment=payment,
+                website=payment.website,
+                requested_by_carbon=payment.requested_by_carbon,
+                requested_by_silicon=payment.requested_by_silicon,
+                status="pending",
+            )
 
         # Send confirmation emails
         from common.mail import send_email
